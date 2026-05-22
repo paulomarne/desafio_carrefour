@@ -790,4 +790,4 @@ A PoC funciona com zero dependências externas. Cada componente tem troca por co
 
 ---
 
-*Banco Carrefour — Desafio Arquiteto de Soluções — Janeiro 2025*
+*Banco Carrefour — Desafio Arquiteto de Soluções*
