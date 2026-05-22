@@ -1,0 +1,116 @@
+{
+  "version": 3,
+  "targets": {
+    "net8.0": {
+      "FluxoDeCaixa.Application/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v8.0",
+        "dependencies": {
+          "FluxoDeCaixa.Core": "1.0.0"
+        },
+        "compile": {
+          "bin/placeholder/FluxoDeCaixa.Application.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/FluxoDeCaixa.Application.dll": {}
+        }
+      },
+      "FluxoDeCaixa.Core/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v8.0",
+        "compile": {
+          "bin/placeholder/FluxoDeCaixa.Core.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/FluxoDeCaixa.Core.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "FluxoDeCaixa.Application/1.0.0": {
+      "type": "project",
+      "path": "../Application/FluxoDeCaixa.Application.csproj",
+      "msbuildProject": "../Application/FluxoDeCaixa.Application.csproj"
+    },
+    "FluxoDeCaixa.Core/1.0.0": {
+      "type": "project",
+      "path": "../Core/FluxoDeCaixa.Core.csproj",
+      "msbuildProject": "../Core/FluxoDeCaixa.Core.csproj"
+    }
+  },
+  "projectFileDependencyGroups": {
+    "net8.0": [
+      "FluxoDeCaixa.Application >= 1.0.0",
+      "FluxoDeCaixa.Core >= 1.0.0"
+    ]
+  },
+  "packageFolders": {
+    "/home/ubuntu/.nuget/packages/": {}
+  },
+  "project": {
+    "version": "1.0.0",
+    "restore": {
+      "projectUniqueName": "/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Infrastructure/FluxoDeCaixa.Infrastructure.csproj",
+      "projectName": "FluxoDeCaixa.Infrastructure",
+      "projectPath": "/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Infrastructure/FluxoDeCaixa.Infrastructure.csproj",
+      "packagesPath": "/home/ubuntu/.nuget/packages/",
+      "outputPath": "/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Infrastructure/obj/",
+      "projectStyle": "PackageReference",
+      "configFilePaths": [
+        "/home/ubuntu/.nuget/NuGet/NuGet.Config"
+      ],
+      "originalTargetFrameworks": [
+        "net8.0"
+      ],
+      "sources": {
+        "https://api.nuget.org/v3/index.json": {}
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "projectReferences": {
+            "/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Application/FluxoDeCaixa.Application.csproj": {
+              "projectPath": "/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Application/FluxoDeCaixa.Application.csproj"
+            },
+            "/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Core/FluxoDeCaixa.Core.csproj": {
+              "projectPath": "/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Core/FluxoDeCaixa.Core.csproj"
+            }
+          }
+        }
+      },
+      "warningProperties": {
+        "warnAsError": [
+          "NU1605"
+        ]
+      },
+      "restoreAuditProperties": {
+        "enableAudit": "true",
+        "auditLevel": "low",
+        "auditMode": "direct"
+      }
+    },
+    "frameworks": {
+      "net8.0": {
+        "targetAlias": "net8.0",
+        "imports": [
+          "net461",
+          "net462",
+          "net47",
+          "net471",
+          "net472",
+          "net48",
+          "net481"
+        ],
+        "assetTargetFallback": true,
+        "warn": true,
+        "frameworkReferences": {
+          "Microsoft.NETCore.App": {
+            "privateAssets": "all"
+          }
+        },
+        "runtimeIdentifierGraphPath": "/home/ubuntu/.dotnet/sdk/8.0.421/PortableRuntimeIdentifierGraph.json"
+      }
+    }
+  }
+}

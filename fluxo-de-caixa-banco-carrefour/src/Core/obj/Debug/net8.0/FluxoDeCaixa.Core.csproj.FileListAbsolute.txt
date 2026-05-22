@@ -1,0 +1,11 @@
+/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Core/bin/Debug/net8.0/FluxoDeCaixa.Core.deps.json
+/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Core/bin/Debug/net8.0/FluxoDeCaixa.Core.dll
+/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Core/bin/Debug/net8.0/FluxoDeCaixa.Core.pdb
+/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Core/obj/Debug/net8.0/FluxoDeCaixa.Core.GeneratedMSBuildEditorConfig.editorconfig
+/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Core/obj/Debug/net8.0/FluxoDeCaixa.Core.AssemblyInfoInputs.cache
+/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Core/obj/Debug/net8.0/FluxoDeCaixa.Core.AssemblyInfo.cs
+/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Core/obj/Debug/net8.0/FluxoDeCaixa.Core.csproj.CoreCompileInputs.cache
+/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Core/obj/Debug/net8.0/FluxoDeCaixa.Core.dll
+/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Core/obj/Debug/net8.0/refint/FluxoDeCaixa.Core.dll
+/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Core/obj/Debug/net8.0/FluxoDeCaixa.Core.pdb
+/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Core/obj/Debug/net8.0/ref/FluxoDeCaixa.Core.dll
