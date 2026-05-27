@@ -799,6 +799,13 @@ timeline
 
 ## Testes e Qualidade
 
+### Evidência de testes
+
+<img width="1241" height="297" alt="Go NoGo Produção" src="https://github.com/paulomarne/desafio_carrefour/Evidência de testes.png" />
+
+### Go NoGo
+<img width="1258" height="690" alt="Evidência de testes" src="https://github.com/paulomarne/desafio_carrefour/Go NoGo Produção.png" />
+
 ### Pirâmide de Testes
 
 ```mermaid
