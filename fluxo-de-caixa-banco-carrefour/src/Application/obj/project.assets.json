@@ -1,10 +1,10 @@
 {
   "version": 3,
   "targets": {
-    "net8.0": {
+    "net9.0": {
       "FluxoDeCaixa.Core/1.0.0": {
         "type": "project",
-        "framework": ".NETCoreApp,Version=v8.0",
+        "framework": ".NETCoreApp,Version=v9.0",
         "compile": {
           "bin/placeholder/FluxoDeCaixa.Core.dll": {}
         },
@@ -22,37 +22,37 @@
     }
   },
   "projectFileDependencyGroups": {
-    "net8.0": [
+    "net9.0": [
       "FluxoDeCaixa.Core >= 1.0.0"
     ]
   },
   "packageFolders": {
-    "/home/ubuntu/.nuget/packages/": {}
+    "/Users/paulomarne/.nuget/packages/": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Application/FluxoDeCaixa.Application.csproj",
+      "projectUniqueName": "/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Application/FluxoDeCaixa.Application.csproj",
       "projectName": "FluxoDeCaixa.Application",
-      "projectPath": "/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Application/FluxoDeCaixa.Application.csproj",
-      "packagesPath": "/home/ubuntu/.nuget/packages/",
-      "outputPath": "/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Application/obj/",
+      "projectPath": "/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Application/FluxoDeCaixa.Application.csproj",
+      "packagesPath": "/Users/paulomarne/.nuget/packages/",
+      "outputPath": "/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Application/obj/",
       "projectStyle": "PackageReference",
       "configFilePaths": [
-        "/home/ubuntu/.nuget/NuGet/NuGet.Config"
+        "/Users/paulomarne/.nuget/NuGet/NuGet.Config"
       ],
       "originalTargetFrameworks": [
-        "net8.0"
+        "net9.0"
       ],
       "sources": {
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
-        "net8.0": {
-          "targetAlias": "net8.0",
+        "net9.0": {
+          "targetAlias": "net9.0",
           "projectReferences": {
-            "/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Core/FluxoDeCaixa.Core.csproj": {
-              "projectPath": "/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Core/FluxoDeCaixa.Core.csproj"
+            "/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Core/FluxoDeCaixa.Core.csproj": {
+              "projectPath": "/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Core/FluxoDeCaixa.Core.csproj"
             }
           }
         }
@@ -66,11 +66,12 @@
         "enableAudit": "true",
         "auditLevel": "low",
         "auditMode": "direct"
-      }
+      },
+      "SdkAnalysisLevel": "9.0.300"
     },
     "frameworks": {
-      "net8.0": {
-        "targetAlias": "net8.0",
+      "net9.0": {
+        "targetAlias": "net9.0",
         "imports": [
           "net461",
           "net462",
@@ -87,7 +88,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "/home/ubuntu/.dotnet/sdk/8.0.421/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "/usr/local/share/dotnet/sdk/9.0.302/PortableRuntimeIdentifierGraph.json"
       }
     }
   }

@@ -1,92 +1,69 @@
-# Desafio Arquiteto de Soluções - Banco Carrefour: Sistema de Fluxo de Caixa
+# Sistema de Controle de Fluxo de Caixa — Banco Carrefour
 
-Este repositório contém a solução proposta para o desafio técnico de Arquiteto de Soluções do Banco Carrefour, focado em um sistema de controle de fluxo de caixa diário.
+> Solução para o desafio técnico de Arquiteto de Soluções com foco em Clean Architecture, DDD, CQRS, Event-Driven e Microsserviços.
 
-# Visão Geral da Solução
+## Visão Rápida
 
-A solução foi projetada com base em princípios de **Clean Architecture**, **Domain-Driven Design (DDD)**, **CQRS (Command Query Responsibility Segregation)** e **Event-Driven Architecture**. O objetivo é atender aos requisitos de negócio e não funcionais, como alta disponibilidade, escalabilidade e resiliência, utilizando as tecnologias mais recentes do ecossistema .NET.
-
-O sistema é composto por dois serviços principais:
-
-1.  **API de Lançamentos**: Responsável por registrar operações de débito e crédito.
-2.  **API de Consolidado Diário**: Responsável por fornecer relatórios do saldo diário consolidado.
-
-Para mais detalhes sobre a arquitetura, justificativas de decisões e estrutura do projeto, consulte o documento [Arquitetura da Solução](docs/solution_architecture.md).
-
-# Tecnologias Utilizadas
-
--   **Backend**: C# e .NET 9
--   **APIs**: ASP.NET Core Web API
--   **Padrões**: Clean Architecture, DDD, CQRS, Event-Driven
--   **Testes**: xUnit, Moq, FluentAssertions
--   **Controle de Versão**: Git
--   **Containerização**: Docker
-
-# Como Rodar Localmente
-
-Para executar a aplicação localmente, você precisará ter o Docker e o Docker Compose instalados em sua máquina.
-
-1.  **Clone o Repositório**:
-    ```bash
-    git clone <URL_DO_REPOSITORIO>
-    cd fluxo-de-caixa-banco-carrefour
-    ```
-
-2.  **Construa e Inicie os Contêineres**:
-    A solução inclui um arquivo `docker-compose.yml` (a ser criado) que orquestrará os serviços. Execute o seguinte comando na raiz do projeto:
-    ```bash
-    docker compose up --build
-    ```
-    Este comando irá construir as imagens Docker das APIs e do Processador de Eventos, e iniciará todos os serviços definidos no `docker-compose.yml`.
-
-3.  **Acesse as APIs**:
-    -   **API de Lançamentos**: `https://localhost:5001/swagger` (ou a porta configurada no docker-compose)
-    -   **API de Consolidado Diário**: `https://localhost:5002/swagger` (ou a porta configurada no docker-compose)
-
-# Estrutura do Projeto exemplo
-
-```
-├── src/
-│   ├── Core/ (Domain Layer)
-│   ├── Application/ (Application Layer)
-│   ├── Infrastructure/ (Infrastructure Layer)
-│   ├── Presentation/ (APIs)
-│   │   ├── ApiLancamentos/
-│   │   └── ApiConsolidadoDiario/
-│   └── WorkerServices/
-│       └── ProcessadorEventos/
-├── tests/
-│   └── FluxoDeCaixa.UnitTests/
-├── docs/
-│   ├── C4_Diagrams/
-│   └── solution_architecture.md
-├── .gitignore
-├── .editorconfig
-└── docker-compose.yml
+```mermaid
+flowchart LR
+    U([Comerciante]) --> GW[API Gateway]
+    GW --> LA[lancamentos-api\n:5001]
+    GW --> CA[consolidado-api\n:5002]
+    LA --> PG1[(PostgreSQL)]
+    LA --> MB[(RabbitMQ)]
+    MB --> WK[Worker\nProcessador]
+    WK --> PG2[(PostgreSQL)]
+    WK --> RD[(Redis)]
+    CA --> RD
 ```
 
-# Documentação Adicional
+## Arquitetura em Camadas (Clean Architecture)
 
--   [**Arquitetura da Solução**](docs/solution_architecture.md): Detalhes sobre o design arquitetural, justificativas técnicas, requisitos funcionais e não funcionais, e considerações sobre requisitos diferenciais e evoluções futuras.
--   **Diagramas C4**: Os diagramas de Contexto e Contêineres estão disponíveis na pasta `docs/C4_Diagrams/` e incorporados no documento de arquitetura.
+| Camada | Responsabilidade | Dependências |
+|---|---|---|
+| **Domain (Core)** | Entidades, Domain Events, Invariantes, Interfaces | Nenhuma |
+| **Application** | Commands, Queries, Handlers, Pipeline | Domain |
+| **Infrastructure** | EF Core, Redis, RabbitMQ, Retry | Domain |
+| **Presentation** | Controllers, Middleware, Health Checks | Application |
 
-# Testes
+## Tecnologias
 
-Para executar os testes unitários, navegue até a raiz do projeto e execute:
+| Componente | PoC (este repo) | Produção |
+|---|---|---|
+| Runtime | .NET 9 | .NET 9 |
+| Banco de Dados | In-Memory | PostgreSQL 16 |
+| Mensageria | RabbitMQ | Azure Service Bus |
+| Cache | IMemoryCache | Redis 7 |
+| Containers | Docker Compose | AKS (Kubernetes) |
+| Observabilidade | Console logs | OTel + Jaeger + Grafana |
+
+## Como Rodar
 
 ```bash
-export DOTNET_ROOT=$HOME/.dotnet
-export PATH=$PATH:$HOME/.dotnet:$HOME/.dotnet/tools
+# Opção 1: Docker Compose (stack completa)
+docker compose up --build
+
+# Opção 2: Apenas .NET
+dotnet run --project src/Presentation/ApiLancamentos
+dotnet run --project src/Presentation/ApiConsolidado
+dotnet run --project src/WorkerServices/ProcessadorEventos
+
+# Testes
 dotnet test
 ```
 
-# Próximos Passos e Evoluções Futuras
+## Endpoints
 
-**Conforme detalhado no documento de arquitetura, a solução pode ser expandida com:
+| Serviço | Endpoint | Descrição |
+|---|---|---|
+| lancamentos-api :5001 | `POST /api/lancamentos` | Registra débito ou crédito |
+| lancamentos-api :5001 | `GET /api/lancamentos/{data}` | Lista por data |
+| lancamentos-api :5001 | `DELETE /api/lancamentos/{id}` | Cancela (soft-delete) |
+| consolidado-api :5002 | `GET /api/consolidado/{data}` | Saldo por data |
+| consolidado-api :5002 | `GET /api/consolidado/hoje` | Saldo do dia atual |
 
--   Implementação completa de Event Sourcing.
--   Padrões de compensação para transações distribuídas (Saga Pattern).
--   Desenvolvimento de uma interface de usuário (UI).
--   Integração com Machine Learning para previsão de fluxo de caixa.
--   Integração com sistemas bancários externos.
+## Documentação
 
+- [Arquitetura Detalhada](docs/solution_architecture.md) — C4, CQRS, Outbox, ADRs, NFRs
+- [Diagrama de Use Cases](docs/use_cases.md) — 29 use cases em 5 módulos com atores, fluxos e rastreabilidade
+- [README Principal](../README.md) — Visão completa com todos os diagramas Mermaid

@@ -1,0 +1,16 @@
+/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Application/bin/Debug/net9.0/FluxoDeCaixa.Application.deps.json
+/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Application/bin/Debug/net9.0/FluxoDeCaixa.Application.dll
+/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Application/bin/Debug/net9.0/FluxoDeCaixa.Application.pdb
+/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Application/bin/Debug/net9.0/FluxoDeCaixa.Core.dll
+/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Application/bin/Debug/net9.0/FluxoDeCaixa.Core.pdb
+/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Application/obj/Debug/net9.0/FluxoDeCaixa.Application.csproj.AssemblyReference.cache
+/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Application/obj/Debug/net9.0/FluxoDeCaixa.Application.GeneratedMSBuildEditorConfig.editorconfig
+/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Application/obj/Debug/net9.0/FluxoDeCaixa.Application.AssemblyInfoInputs.cache
+/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Application/obj/Debug/net9.0/FluxoDeCaixa.Application.AssemblyInfo.cs
+/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Application/obj/Debug/net9.0/FluxoDeCaixa.Application.csproj.CoreCompileInputs.cache
+/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Application/obj/Debug/net9.0/FluxoDeCaixa.Application.sourcelink.json
+/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Application/obj/Debug/net9.0/FluxoDeC.0F5990F8.Up2Date
+/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Application/obj/Debug/net9.0/FluxoDeCaixa.Application.dll
+/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Application/obj/Debug/net9.0/refint/FluxoDeCaixa.Application.dll
+/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Application/obj/Debug/net9.0/FluxoDeCaixa.Application.pdb
+/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Application/obj/Debug/net9.0/ref/FluxoDeCaixa.Application.dll

@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "ypGQBrVGkkc=",
+  "dgSpecHash": "7b4vZmmupNc=",
   "success": true,
-  "projectFilePath": "/home/ubuntu/fluxo-de-caixa-banco-carrefour/src/Core/FluxoDeCaixa.Core.csproj",
+  "projectFilePath": "/Users/paulomarne/Documents/Desafio Carrefour 2026/fluxo-de-caixa-banco-carrefour/src/Core/FluxoDeCaixa.Core.csproj",
   "expectedPackageFiles": [],
   "logs": []
 }

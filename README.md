@@ -1,71 +1,99 @@
-# 💰 Arquitetura de Soluções — Controle de Fluxo de Caixa
+# Arquitetura de Soluções — Controle de Fluxo de Caixa
 
-> **Desafio:** Arquiteto de Soluções — Banco Carrefour · Janeiro 2025  
-> **Stack:** .NET 9 · PostgreSQL · Redis · Azure Service Bus · Docker · CQRS · DDD · Outbox Pattern
-
----
-
-## ⚡ TL;DR — O que esta solução resolve
-
-O desafio tem dois requisitos não-funcionais que ditam **toda** a arquitetura:
-
-```
-RNF-01: Lançamentos NÃO podem cair se o consolidado cair
-RNF-02: Consolidado suporta 50 rps com máx. 5% de perda
-```
-
-| Requisito | Solução Escolhida | Por quê |
-|---|---|---|
-| **RNF-01** | Microsserviços + Mensageria Assíncrona | Monolito compartilha processo — uma falha derruba os dois |
-| **RNF-02** | Cache Redis TTL 30s + consistência eventual | 50 rps = 180k queries/hora sem cache; inviável em banco relacional |
-| **Atomicidade** | Outbox Pattern | Garante que lançamento salvo = evento publicado, na mesma transação |
+> **Desafio:** Arquiteto de Soluções — Banco Carrefour · 2026
+> **Stack:** .NET 9 · PostgreSQL · Redis · RabbitMQ · Docker · CQRS · DDD · Clean Architecture · Event-Driven
 
 ---
 
-## 📋 Checklist Completo do Desafio
+## TL;DR — Decisões que guiam toda a arquitetura
 
-### Requisitos Obrigatórios
+Os dois requisitos não-funcionais críticos ditam cada escolha arquitetural:
 
-| Item | Status | Onde está |
+| Requisito | Meta | Solução |
 |---|---|---|
-| Serviço de controle de lançamentos | ✅ | `src/FluxoCaixa.Lancamentos.*` |
-| Serviço do consolidado diário | ✅ | `src/FluxoCaixa.Consolidado.*` |
-| Mapeamento de domínios e capacidades | ✅ | [Seção: Domínios Funcionais](#domínios-funcionais-ddd) |
-| Refinamento de requisitos funcionais e NF | ✅ | [Seção: Requisitos](#requisitos) |
-| Desenho da solução completo (Arquitetura Alvo) | ✅ | [Seção: Arquitetura Alvo](#arquitetura-alvo) |
-| Justificativa de ferramentas e tipo de arquitetura | ✅ | [ADRs](#adrs--architecture-decision-records) |
-| Testes | ✅ | `tests/` — 34 casos (unitários + integração) |
-| README com instruções para rodar | ✅ | [Como Rodar](#como-rodar-localmente) |
-| Repositório público com toda documentação | ✅ | Este repositório |
-
-### Requisitos Diferenciais
-
-| Item | Status | Onde está |
-|---|---|---|
-| Arquitetura de Transição (migração de legado) | ✅ | [Seção: Transição](#arquitetura-de-transição) |
-| Estimativa de custos de infraestrutura | ✅ | [Seção: Custos](#estimativa-de-custos-azure) |
-| Monitoramento e Observabilidade | ✅ | [Seção: Observabilidade](#monitoramento--observabilidade) |
-| Critérios de segurança para consumo de serviços | ✅ | [Seção: Segurança](#segurança) |
+| **RNF-01** Lançamentos não caem se o consolidado cair | 100% isolamento | Microsserviços independentes + mensageria assíncrona |
+| **RNF-02** Consolidado suporta 50 rps com máx. 5% perda | P99 < 200ms | Cache Redis TTL 30s + projeção pré-computada |
+| **RNF-03** Atomicidade entre persistência e evento | Zero perda de dados | Outbox Pattern (mesma transação) |
 
 ---
 
 ## Índice
 
-1. [Domínios Funcionais (DDD)](#domínios-funcionais-ddd)
-2. [Requisitos](#requisitos)
-3. [Decisões Arquiteturais (ADRs)](#adrs--architecture-decision-records)
-4. [Arquitetura Alvo](#arquitetura-alvo)
+1. [Visão AS-IS / TO-BE](#visão-as-is--to-be)
+2. [Domínios Funcionais (DDD)](#domínios-funcionais-ddd)
+3. [Arquitetura Alvo — C4 Container](#arquitetura-alvo--c4-container)
+4. [Camadas Internas — Clean Architecture](#camadas-internas--clean-architecture)
 5. [Fluxos de Dados Críticos](#fluxos-de-dados-críticos)
-6. [Estrutura do Projeto](#estrutura-do-projeto)
-7. [Como Rodar Localmente](#como-rodar-localmente)
-8. [Endpoints da API](#endpoints-da-api)
-9. [Testes](#testes)
+6. [Requisitos Não Funcionais](#requisitos-não-funcionais)
+7. [ADRs — Decisões Arquiteturais](#adrs--decisões-arquiteturais)
+8. [Estrutura do Projeto](#estrutura-do-projeto)
+9. [Observabilidade](#observabilidade)
 10. [Segurança](#segurança)
-11. [Monitoramento & Observabilidade](#monitoramento--observabilidade)
-12. [Arquitetura de Transição](#arquitetura-de-transição)
-13. [Estimativa de Custos Azure](#estimativa-de-custos-azure)
-14. [PoC vs Produção](#poc-vs-produção)
+11. [Arquitetura de Transição](#arquitetura-de-transição)
+12. [Testes e Qualidade](#testes-e-qualidade)
+13. [Kubernetes e Infraestrutura](#kubernetes-e-infraestrutura)
+14. [Estimativa de Custos Azure](#estimativa-de-custos-azure)
 15. [Evoluções Futuras](#evoluções-futuras)
+16. [Como Rodar Localmente](#como-rodar-localmente)
+
+---
+
+## Visão AS-IS / TO-BE
+
+### AS-IS — Situação Atual (Sistema Legado)
+
+```mermaid
+flowchart TD
+    U([Comerciante]) --> MONO[Monolito\nFluxo de Caixa]
+    MONO --> DB[(Banco de Dados\nÚnico)]
+    MONO --> REL[Relatórios\nSíncronos]
+
+    style MONO fill:#ff6b6b,color:#fff
+    style DB fill:#ffa94d,color:#fff
+```
+
+**Problemas identificados:**
+- Acoplamento total: falha em qualquer módulo derruba o sistema inteiro
+- Relatórios síncronos competem com lançamentos por recursos do banco
+- Impossível escalar consolidado independentemente dos lançamentos
+- Zero separação de contextos de domínio
+
+### TO-BE — Arquitetura Alvo
+
+```mermaid
+flowchart TD
+    U([Comerciante]) --> GW[API Gateway\nJWT · Rate Limit · TLS]
+
+    GW --> LA[lancamentos-api\n:5001]
+    GW --> CA[consolidado-api\n:5002]
+
+    LA --> PG1[(PostgreSQL\nlancamentos)]
+    LA --> MB[(RabbitMQ\nBroker)]
+
+    MB --> WK[Worker\nProcessadorEventos]
+    WK --> PG2[(PostgreSQL\nconsolidado)]
+    WK --> RD[(Redis\nCache TTL 30s)]
+
+    CA --> RD
+    CA --> PG2
+
+    LA -.->|independente| CA
+
+    style LA fill:#339af0,color:#fff
+    style CA fill:#51cf66,color:#fff
+    style WK fill:#ff922b,color:#fff
+    style GW fill:#845ef7,color:#fff
+    style RD fill:#f03e3e,color:#fff
+```
+
+**Ganhos mensuráveis:**
+| Aspecto | AS-IS | TO-BE |
+|---|---|---|
+| Isolamento de falhas | Nenhum | Total (RNF-01 atendido) |
+| Throughput consolidado | ~200 rps (sem cache) | >10.000 rps (cache hit) |
+| Latência consolidado | ~50ms | <5ms (cache hit) |
+| Escalabilidade | Vertical apenas | Horizontal independente |
+| Observabilidade | Logs básicos | Traces distribuídos + métricas |
 
 ---
 
@@ -73,32 +101,32 @@ RNF-02: Consolidado suporta 50 rps com máx. 5% de perda
 
 ### Bounded Contexts
 
-```
-┌───────────────────────────────────────────────────────────────────────────┐
-│                        FLUXO DE CAIXA                                     │
-│                                                                           │
-│  ┌─────────────────────────────┐    ┌──────────────────────────────────┐  │
-│  │   LANÇAMENTOS (Core Domain) │    │  CONSOLIDAÇÃO DIÁRIA (Core)      │  │
-│  │                             │    │                                  │  │
-│  │  Entidades:                 │    │  Entidades:                      │  │
-│  │  · Lancamento               │    │  · ConsolidadoDiario             │  │
-│  │  · TipoLancamento           │    │                                  │  │
-│  │                             │    │  Projeção calculada:             │  │
-│  │  Comandos:                  │    │  · TotalCréditos                 │  │
-│  │  · RegistrarLancamento      │    │  · TotalDébitos                  │  │
-│  │  · CancelarLancamento       │    │  · SaldoLíquido = Créd − Déb    │  │
-│  │                             │    │                                  │  │
-│  │  Eventos publicados:        │───▶│  Atualizada via eventos          │  │
-│  │  · LancamentoRegistrado     │    │  (consistência eventual)         │  │
-│  │  · LancamentoCancelado      │    │                                  │  │
-│  │                             │    │  Queries:                        │  │
-│  │  Invariantes de domínio:    │    │  · ObterConsolidadoDiario        │  │
-│  │  · Valor > 0                │    │  · ObterPorPeriodo (máx 365d)    │  │
-│  │  · Descrição obrigatória    │    │                                  │  │
-│  │  · Sem datas futuras        │    │  Cache TTL 30s:                  │  │
-│  │  · Valor ≤ 10.000.000       │    │  Memory (PoC) → Redis (Prod)     │  │
-│  └─────────────────────────────┘    └──────────────────────────────────┘  │
-└───────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph LR
+    subgraph BC1["Bounded Context: Lançamentos (Core Domain)"]
+        L1[Lancamento\nEntidade Raiz]
+        L2[TipoLancamento\nEnum]
+        L3[StatusLancamento\nEnum]
+        L4[LancamentoRegistradoEvent\nDomain Event]
+        L5[LancamentoCanceladoEvent\nDomain Event]
+    end
+
+    subgraph BC2["Bounded Context: Consolidação Diária (Core Domain)"]
+        C1[ConsolidadoDiario\nEntidade Raiz]
+        C2[TotalCréditos\nValue Object]
+        C3[TotalDébitos\nValue Object]
+        C4[SaldoLíquido\nComputado]
+    end
+
+    subgraph SK["Shared Kernel"]
+        SK1[IDomainEvent]
+        SK2[IRepository]
+    end
+
+    L4 -->|evento integração| C1
+    L5 -->|estorno| C1
+    L1 -.->|publica| L4
+    L1 -.->|publica| L5
 ```
 
 ### Linguagem Ubíqua
@@ -106,356 +134,833 @@ RNF-02: Consolidado suporta 50 rps com máx. 5% de perda
 | Termo | Definição no Domínio |
 |---|---|
 | **Lançamento** | Registro financeiro de entrada ou saída na conta do comerciante |
-| **Débito** (tipo 1) | Saída de caixa — reduz o saldo disponível |
-| **Crédito** (tipo 2) | Entrada de caixa — aumenta o saldo disponível |
+| **Débito** | Saída de caixa — reduz o saldo disponível |
+| **Crédito** | Entrada de caixa — aumenta o saldo disponível |
 | **Consolidado Diário** | Projeção calculada do saldo total de um dia |
 | **Saldo Líquido** | TotalCréditos − TotalDébitos de um dia |
-| **Estorno** | Reversão de um lançamento cancelado no consolidado |
+| **Estorno** | Reversão aplicada ao consolidado quando lançamento é cancelado |
 
 ### Capacidades de Negócio
 
 | Capacidade | Domínio | Criticidade |
 |---|---|---|
-| Registrar lançamento (débito/crédito) | Lançamentos | 🔴 Crítica |
-| Consultar lançamentos por data | Lançamentos | 🟠 Alta |
-| Cancelar lançamento | Lançamentos | 🟠 Alta |
-| Consultar saldo consolidado do dia | Consolidação | 🔴 Crítica |
-| Consultar saldo por período | Consolidação | 🟠 Alta |
-| Reprocessar consolidado (admin) | Consolidação | 🟡 Média |
+| Registrar lançamento (débito/crédito) | Lançamentos | Crítica |
+| Cancelar lançamento (soft-delete) | Lançamentos | Alta |
+| Consultar lançamentos por data | Lançamentos | Alta |
+| Consultar saldo consolidado do dia | Consolidação | Crítica |
+| Reprocessar consolidado (admin) | Consolidação | Média |
 
 ---
 
-## Requisitos
+## Arquitetura Alvo — C4 Container
 
-### Requisitos Funcionais
+### Nível de Contexto (C4-L1)
 
-#### Serviço de Lançamentos
+```mermaid
+C4Context
+    title Diagrama de Contexto — Sistema Fluxo de Caixa
 
-| ID | Requisito | Critério de Aceitação |
-|---|---|---|
-| RF-01 | Registrar lançamento de débito | Persistido com tipo=DEBITO, valor>0, data, descrição |
-| RF-02 | Registrar lançamento de crédito | Persistido com tipo=CREDITO, valor>0, data, descrição |
-| RF-03 | Listar lançamentos por data | Retorna todos os lançamentos de uma data (incluindo cancelados) |
-| RF-04 | Cancelar lançamento | Soft-delete; evento publicado para atualizar consolidado |
-| RF-05 | Validar lançamento | Rejeitar valor ≤ 0, descrição vazia, data futura, tipo inválido |
+    Person(comerciante, "Comerciante", "Registra vendas, pagamentos e consulta o caixa do dia")
+    Person(admin, "Administrador", "Monitora saúde do sistema e reprocessa dados")
 
-#### Serviço de Consolidado Diário
+    System(fluxo, "Sistema Fluxo de Caixa", "Registra lançamentos e consolida saldo diário em tempo real")
 
-| ID | Requisito | Critério de Aceitação |
-|---|---|---|
-| RF-06 | Consultar saldo consolidado por data | Retorna TotalCréditos, TotalDébitos, SaldoLíquido |
-| RF-07 | Consultar consolidado por período | Retorna lista diária; período máximo 365 dias |
-| RF-08 | Consolidado zerado para dia sem lançamentos | Retorna zeros em vez de 404 |
+    System_Ext(idp, "Identity Provider\n(Azure AD)", "Autenticação e autorização JWT")
+    System_Ext(monitor, "Grafana + Jaeger", "Observabilidade e rastreamento distribuído")
 
-### Requisitos Não Funcionais
-
-| ID | Categoria | Requisito | Meta | Como Atendido |
-|---|---|---|---|---|
-| **RNF-01** | **Disponibilidade** | Lançamentos independentes do consolidado | 100% isolamento | Microsserviços + mensageria assíncrona |
-| **RNF-02** | **Throughput** | 50 rps no consolidado | P99 < 200ms | Cache TTL 30s + projeção pré-computada |
-| **RNF-03** | **Confiabilidade** | Máx. 5% perda no consolidado | ≥ 95% sucesso | Cache como fallback; sem SPOF |
-| RNF-04 | Consistência | Atualização eventual do consolidado | Defasagem < 5s | Outbox Relay poll a cada 2s |
-| RNF-05 | Rastreabilidade | Logs com correlationId | 100% requests | Serilog + OpenTelemetry |
-| RNF-06 | Escalabilidade | Horizontal sem estado em memória | Zero in-memory sessions | Stateless + Redis externo |
-| RNF-07 | Resiliência | Falha no broker não derruba lançamentos | Zero perda de dados | Outbox persiste antes de publicar |
-
----
-
-## ADRs — Architecture Decision Records
-
-### ADR-001 — Microsserviços vs Monolito
-
-**Decisão:** Dois microsserviços independentes (`lancamentos-api` e `consolidado-api`).
-
-**Contexto:** O RNF-01 exige que os lançamentos continuem funcionando mesmo se o consolidado cair. Em um monolito, ambos compartilham o mesmo processo — uma falha de memória ou CPU derruba os dois simultaneamente.
-
-**Consequências:**
-- ✅ Isolamento total de falhas
-- ✅ Escalonamento independente (consolidado: 3 réplicas; lançamentos: 2)
-- ❌ Complexidade operacional; mitigada por Docker Compose (local) e AKS (produção)
-
-**Alternativa descartada:** Monolito Modular — atenderia escalonamento mas viola RNF-01.
-
----
-
-### ADR-002 — Outbox Pattern para Atomicidade
-
-**Decisão:** Transactional Outbox + BackgroundService (OutboxRelayWorker).
-
-**Problema resolvido — Dual Write:**
-```
-❌ SEM OUTBOX (perigoso):
-  1. INSERT lancamentos → OK
-  2. Publica no broker → FALHA (crash, timeout)
-  Resultado: lançamento salvo, consolidado NUNCA atualizado. Inconsistência silenciosa.
-
-✅ COM OUTBOX (seguro):
-  Transação única:
-    INSERT lancamentos
-    INSERT outbox_messages   ← mesmo COMMIT
-  OutboxRelayWorker publica de forma assíncrona.
-  Máximo 5 tentativas com log de erro.
+    Rel(comerciante, fluxo, "Registra e consulta", "HTTPS/REST")
+    Rel(admin, fluxo, "Monitora e administra", "HTTPS/REST")
+    Rel(fluxo, idp, "Valida tokens JWT", "HTTPS")
+    Rel(fluxo, monitor, "Envia traces e métricas", "OTLP/gRPC")
 ```
 
-**Consequências:**
-- ✅ Atomicidade entre persistência e publicação de evento
-- ✅ Auditoria nativa (tabela `outbox_messages` registra tudo)
-- ❌ Latência de ~2s entre lançamento e atualização do consolidado (aceitável)
+### Nível de Contêiner (C4-L2)
+
+```mermaid
+C4Container
+    title Diagrama de Contêineres — Fluxo de Caixa
+
+    Person(user, "Comerciante")
+
+    Container(gw, "API Gateway", "NGINX / Azure APIM", "Rate Limiting · JWT · TLS 1.3 · CORS")
+
+    Container(lancamentos, "lancamentos-api", ".NET 9 Minimal API", "Registra e cancela lançamentos\nCQRS · DDD · Outbox Pattern")
+    Container(consolidado, "consolidado-api", ".NET 9 Minimal API", "Consulta saldo consolidado\nCache-aside · CQRS read-only")
+    Container(worker, "processador-eventos", ".NET Worker Service", "Consome eventos e atualiza consolidado\nRetry · Idempotência")
+
+    ContainerDb(pg1, "PostgreSQL\nlancamentos", "PostgreSQL 16", "Lançamentos + tabela outbox_messages")
+    ContainerDb(pg2, "PostgreSQL\nconsolidado", "PostgreSQL 16", "Read model otimizado para consulta")
+    ContainerDb(redis, "Redis", "Redis 7", "Cache TTL 30s para consolidado diário")
+    ContainerDb(rabbit, "RabbitMQ", "RabbitMQ 3.13", "Fila de eventos de lançamentos")
+
+    Rel(user, gw, "HTTPS")
+    Rel(gw, lancamentos, "HTTP interno")
+    Rel(gw, consolidado, "HTTP interno")
+    Rel(lancamentos, pg1, "EF Core / SQL")
+    Rel(lancamentos, rabbit, "Publica evento")
+    Rel(worker, rabbit, "Consome evento")
+    Rel(worker, pg2, "Atualiza consolidado")
+    Rel(worker, redis, "Invalida cache")
+    Rel(consolidado, redis, "Cache-aside")
+    Rel(consolidado, pg2, "Fallback leitura")
+```
 
 ---
 
-### ADR-003 — Cache TTL 30s para Consolidado
+## Camadas Internas — Clean Architecture
 
-**Decisão:** `IMemoryCache` (PoC) → Redis com `IDistributedCache` (Produção). Interface `IConsolidadoCache` abstrai a implementação.
+```mermaid
+graph TB
+    subgraph Presentation["Presentation Layer (API)"]
+        P1[Controllers / Endpoints]
+        P2[Middleware de Erros]
+        P3[Health Checks]
+    end
 
-**Contexto:** 50 rps = 50 × 60 × 60 = **180.000 queries/hora** ao banco sem cache. Inviável.
+    subgraph Application["Application Layer"]
+        A1[Commands e Handlers]
+        A2[Queries e Handlers]
+        A3[Pipeline Behaviors\nValidation · Logging]
+        A4[DTOs e Mappers]
+    end
 
-| Cenário | Latência | Capacidade |
-|---|---|---|
-| Sem cache (banco direto) | ~50ms | ~200 rps (com pool saturado) |
-| Com cache (hit) | < 5ms | > 10.000 rps |
-| Com cache (miss) | ~55ms | Raramente ocorre |
+    subgraph Domain["Domain Layer (ZERO dependências externas)"]
+        D1[Entidades Ricas]
+        D2[Domain Events]
+        D3[Interfaces de Repositório]
+        D4[Invariantes de Negócio]
+        D5[Value Objects]
+    end
 
-**Invalidação:** Consumer invalida o cache sempre que um evento chega, garantindo que a próxima leitura reflita o estado atual.
+    subgraph Infrastructure["Infrastructure Layer"]
+        I1[EF Core Repositories]
+        I2[RabbitMQ MessageBus]
+        I3[Redis Cache]
+        I4[Outbox Relay Worker]
+        I5[Retry Policies]
+    end
 
----
+    Presentation --> Application
+    Application --> Domain
+    Infrastructure --> Domain
 
-### ADR-004 — .NET 9 + Minimal API + CQRS
-
-**Decisão:** ASP.NET Core 9 Minimal API com MediatR 12 e FluentValidation 11.
-
-| Componente | Justificativa |
-|---|---|
-| **.NET 9** | ~15% menos alocações HTTP vs .NET 8; melhor startup em containers |
-| **Minimal API** | Menor overhead de reflection vs MVC Controller; ideal para microsserviços |
-| **MediatR** | Pipeline behaviors para Validation + Logging sem poluir handlers |
-| **FluentValidation** | Validações expressivas e testáveis separadas da lógica de negócio |
-| **Result<T>** | Erros como valores — sem exceptions para controle de fluxo |
-
----
-
-### ADR-005 — SQLite (PoC) → PostgreSQL (Produção)
-
-**Decisão:** SQLite para desenvolvimento/avaliação sem infra; PostgreSQL em produção.
-
-A troca é **1 linha no `Program.cs`**:
-```csharp
-// PoC:   opts.UseSqlite(connStr)
-// Prod:  opts.UseNpgsql(connStr)
+    style Domain fill:#2f9e44,color:#fff
+    style Application fill:#1971c2,color:#fff
+    style Presentation fill:#7048e8,color:#fff
+    style Infrastructure fill:#e67700,color:#fff
 ```
 
-Mesmas migrations do EF Core funcionam nos dois providers.
+**Regra de ouro:** as setas de dependência apontam sempre para dentro (Dependency Inversion Principle). O domínio não conhece nenhuma tecnologia externa.
 
----
+### Interfaces do Domínio (contratos)
 
-## Arquitetura Alvo
+```mermaid
+classDiagram
+    class ILancamentoRepository {
+        +AdicionarAsync(lancamento)
+        +ObterPorIdAsync(id) Lancamento
+        +ObterPorDataAsync(data) IEnumerable
+        +AtualizarAsync(lancamento)
+    }
 
-### Visão Geral (C4 — Nível de Contêiner)
+    class IConsolidadoRepository {
+        +ObterPorDataAsync(data, conta) ConsolidadoDiario
+        +SalvarAsync(consolidado)
+    }
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│  CLIENTE (Web / App / curl)                                                  │
-└──────────────────────────────────┬───────────────────────────────────────────┘
-                                   │ HTTPS
-┌──────────────────────────────────▼───────────────────────────────────────────┐
-│  API GATEWAY                                                                 │
-│  · Rate Limiting  · JWT Validation  · TLS 1.3  · CORS  · mTLS interno       │
-└─────────────────────┬─────────────────────────────┬──────────────────────────┘
-                      │                             │
-         ┌────────────▼───────────┐    ┌────────────▼────────────────────────┐
-         │   lancamentos-api       │    │   consolidado-api                   │
-         │   :5001                 │    │   :5002                             │
-         │                         │    │                                     │
-         │  ASP.NET Core 9         │    │  ASP.NET Core 9                     │
-         │  CQRS · DDD · Outbox    │    │  CQRS (read) · Cache · Consumer     │
-         │                         │    │                                     │
-         │  ┌─────────────────┐    │    │  ┌───────────┐  ┌───────────────┐  │
-         │  │   PostgreSQL     │    │    │  │   Redis   │  │  PostgreSQL   │  │
-         │  │   lancamentos   │    │    │  │  TTL 30s  │  │  consolidado  │  │
-         │  │   outbox_msgs   │    │    │  └───────────┘  └───────────────┘  │
-         │  └────────┬────────┘    │    └────────────────────────▲───────────┘
-         │           │ Outbox      │                             │
-         │           │ Relay (2s)  │                             │ consume evento
-         └───────────┼─────────────┘                            │
-                     │ publica evento                            │
-         ┌───────────▼─────────────────────────────────────────┘
-         │   Message Broker                                      │
-         │   Azure Service Bus (Produção)                        │
-         │   RabbitMQ (Desenvolvimento)                          │
-         │   InMemoryMessageBus (PoC)                            │
-         └───────────────────────────────────────────────────────┘
+    class IConsolidadoCache {
+        +ObterAsync(data, conta) ConsolidadoDiario
+        +SalvarAsync(consolidado)
+        +InvalidateAsync(data, conta)
+    }
 
-┌──────────────────────────────────────────────────────────────────────────────┐
-│  OBSERVABILIDADE                                                             │
-│  OpenTelemetry (Traces) · Prometheus (Métricas) · Grafana · Serilog (Logs)  │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
+    class IMessageBus {
+        +PublishAsync(event, queue)
+        +SubscribeAsync(queue, handler)
+    }
 
-### Camadas Internas (Clean Architecture)
+    class Lancamento {
+        +Id Guid
+        +Tipo TipoLancamento
+        +Conta string
+        +Valor decimal
+        +Status StatusLancamento
+        +DomainEvents List
+        +Criar()$ Lancamento
+        +Cancelar()
+        +ClearDomainEvents()
+    }
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  API Layer          Program.cs · Endpoints · Middleware          │
-├─────────────────────────────────────────────────────────────────┤
-│  Application Layer  Commands · Queries · Handlers · Validators  │
-│                     Pipeline Behaviors (Validation + Logging)   │
-├─────────────────────────────────────────────────────────────────┤
-│  Domain Layer       Entities · Events · Exceptions · Interfaces │
-│                     ← ZERO dependências externas →              │
-├─────────────────────────────────────────────────────────────────┤
-│  Infrastructure     EF Core · Repositories · Outbox · Cache     │
-│  Layer              MessageBus · Consumers · BackgroundServices  │
-└─────────────────────────────────────────────────────────────────┘
-        Regra: dependências só apontam para dentro (DIP)
+    class ConsolidadoDiario {
+        +Data DateTime
+        +Conta string
+        +TotalCreditos decimal
+        +TotalDebitos decimal
+        +Saldo decimal
+        +AplicarLancamento(lancamento)
+    }
+
+    ILancamentoRepository ..> Lancamento
+    IConsolidadoRepository ..> ConsolidadoDiario
+    IConsolidadoCache ..> ConsolidadoDiario
 ```
 
 ---
 
 ## Fluxos de Dados Críticos
 
-### Fluxo 1 — Registrar Lançamento
+### Fluxo 1 — Registrar Lançamento (caminho feliz)
 
+```mermaid
+sequenceDiagram
+    actor C as Comerciante
+    participant GW as API Gateway
+    participant LA as lancamentos-api
+    participant DB as PostgreSQL
+    participant OB as OutboxTable
+    participant WK as Worker
+    participant MB as RabbitMQ
+    participant CA as consolidado-api
+    participant RD as Redis
+
+    C->>GW: POST /api/lancamentos
+    GW->>GW: Valida JWT + Rate Limit
+    GW->>LA: HTTP POST
+
+    LA->>LA: FluentValidation
+    LA->>LA: Lancamento.Criar() — invariantes de domínio
+    
+    LA->>DB: BEGIN TRANSACTION
+    LA->>DB: INSERT lancamentos
+    LA->>OB: INSERT outbox_messages
+    LA->>DB: COMMIT
+
+    LA-->>C: 201 Created {id}
+
+    Note over WK,MB: ~2s depois (assíncrono)
+    
+    WK->>OB: SELECT pendentes
+    WK->>MB: Publish LancamentoRegistradoEvent
+    WK->>OB: UPDATE status=Enviado
+
+    MB->>CA: Deliver evento
+    CA->>CA: AplicarLancamento()
+    CA->>DB: UPDATE consolidado_diario
+    CA->>RD: INVALIDATE cache
 ```
-Cliente
-  │  POST /api/lancamentos {valor, tipo, descricao, data}
-  ▼
-API Gateway (JWT validation + Rate Limiting)
-  │
-  ▼
-ValidationBehavior → FluentValidation
-  │  ✅ válido
-  ▼
-RegistrarLancamentoHandler
-  │
-  ├─ Lancamento.Criar()            ← invariantes no domínio
-  │   · valor > 0
-  │   · descrição obrigatória
-  │   · sem data futura
-  │
-  ├─ repository.AdicionarAsync()   ┐
-  ├─ outbox.AdicionarAsync()       ├─ MESMA TRANSAÇÃO (atomicidade)
-  └─ unitOfWork.CommitAsync()      ┘
-  │
-  ▼
-201 Created {id: "..."}
 
-[~2 segundos depois — assíncrono]
+### Fluxo 2 — Consultar Consolidado (50 rps, cache-aside)
 
-OutboxRelayWorker
-  │  lê outbox_messages pendentes
-  ▼
-messageBus.PublicarAsync(LancamentoRegistradoEvent)
-  │
-  ▼
-LancamentoEventConsumer (consolidado-api)
-  ├─ consolidado.AplicarLancamento(valor, tipo)
-  ├─ repository.SalvarAsync(consolidado)
-  └─ cache.InvalidarAsync(data)        ← próxima leitura vai ao banco
+```mermaid
+sequenceDiagram
+    actor C as Comerciante
+    participant CA as consolidado-api
+    participant RD as Redis
+    participant PG as PostgreSQL
+
+    C->>CA: GET /api/consolidado/2025-01-15
+
+    CA->>RD: GET consolidado:2025-01-15:conta
+    
+    alt Cache HIT (99% das req.)
+        RD-->>CA: ConsolidadoDiario
+        CA-->>C: 200 OK em < 5ms
+    else Cache MISS
+        RD-->>CA: null
+        CA->>PG: SELECT * FROM consolidado_diario
+        PG-->>CA: ConsolidadoDiario
+        CA->>RD: SET TTL 30s
+        CA-->>C: 200 OK em ~55ms
+    end
 ```
 
-### Fluxo 2 — Consultar Consolidado (50 rps)
+### Fluxo 3 — Cancelar Lançamento
 
-```
-Cliente
-  │  GET /api/consolidado/2025-01-15
-  ▼
-ObterConsolidadoDiarioHandler
-  │
-  ├─ cache.ObterAsync(data)
-  │   │
-  │   ├─ HIT  → retorna DTO em < 5ms   ✅  (99% das requisições)
-  │   │
-  │   └─ MISS → repository.ObterPorDataAsync(data)
-  │               │
-  │               ├─ Atualiza cache TTL 30s
-  │               └─ retorna em ~55ms   ✅
-  │
-  ▼
-200 OK {data, totalCreditos, totalDebitos, saldoLiquido, atualizadoEm}
+```mermaid
+sequenceDiagram
+    actor C as Comerciante
+    participant LA as lancamentos-api
+    participant DB as PostgreSQL
+    participant MB as RabbitMQ
+    participant CA as consolidado-api
+    participant RD as Redis
 
-Capacidade:
-  Com cache HIT:  50 rps → 50 × 0.005s = 0.25s de thread total/s
-  Sem cache:      50 rps → 50 × 0.055s = 2.75s → connection pool sob pressão
-  Cache resolve o problema estruturalmente.
+    C->>LA: DELETE /api/lancamentos/{id}
+    LA->>DB: SELECT lancamento WHERE id=?
+    
+    alt Lançamento não encontrado
+        LA-->>C: 404 Not Found
+    else Lançamento já cancelado
+        LA-->>C: 400 Bad Request
+    else Lançamento ativo
+        LA->>LA: lancamento.Cancelar()
+        LA->>DB: UPDATE status=Cancelado
+        LA->>MB: Publish LancamentoCanceladoEvent
+        LA-->>C: 204 No Content
+
+        MB->>CA: Deliver evento
+        CA->>CA: Estornar do consolidado
+        CA->>RD: INVALIDATE cache
+    end
 ```
+
+---
+
+## Requisitos Não Funcionais
+
+### Escalabilidade
+
+```mermaid
+graph LR
+    subgraph K8S["Kubernetes (AKS)"]
+        direction TB
+        GW[API Gateway\n1 réplica]
+
+        subgraph LA_POOL["lancamentos-api\nHPA: 2-5 réplicas"]
+            LA1[Pod 1]
+            LA2[Pod 2]
+            LA3[Pod N...]
+        end
+
+        subgraph CA_POOL["consolidado-api\nHPA: 3-10 réplicas"]
+            CA1[Pod 1]
+            CA2[Pod 2]
+            CA3[Pod N...]
+        end
+
+        subgraph WK_POOL["worker\nHPA: 1-3 réplicas"]
+            WK1[Pod 1]
+            WK2[Pod 2]
+        end
+    end
+
+    GW --> LA_POOL
+    GW --> CA_POOL
+    LA_POOL --> MB[(RabbitMQ)]
+    MB --> WK_POOL
+```
+
+**Estratégias:**
+- **HPA (Horizontal Pod Autoscaler):** escala baseado em CPU e métricas customizadas (mensagens na fila)
+- **Stateless:** todas as instâncias são intercambiáveis — sessão nunca em memória local
+- **Redis externo:** cache compartilhado entre todas as réplicas do consolidado-api
+- **Connection Pool:** EF Core pool de conexões configurado por instância
+- **Scale-to-zero:** consolidado-api escala para zero em períodos de baixo tráfego
+
+### Controle de Concorrência
+
+```mermaid
+sequenceDiagram
+    participant W1 as Worker 1
+    participant W2 as Worker 2
+    participant PG as PostgreSQL
+    participant RD as Redis
+
+    Note over W1,W2: Dois workers processam o mesmo evento simultaneamente
+
+    W1->>PG: SELECT FOR UPDATE consolidado WHERE data=D AND conta=C
+    W2->>PG: SELECT FOR UPDATE consolidado WHERE data=D AND conta=C
+    
+    Note over PG: Pessimistic Locking — W2 aguarda
+    
+    W1->>PG: UPDATE TotalCreditos += valor
+    W1->>PG: COMMIT
+    W1->>RD: INVALIDATE cache
+
+    Note over W2: W2 agora pode prosseguir
+    W2->>PG: UPDATE TotalCreditos += valor
+    W2->>PG: COMMIT
+    W2->>RD: INVALIDATE cache
+```
+
+**Mecanismos implementados:**
+- `ConcurrentDictionary` no repositório in-memory (thread-safe)
+- `SELECT FOR UPDATE` no PostgreSQL para updates do consolidado
+- Idempotência via `MessageId` único para evitar processamento duplicado
+- Outbox Pattern garante exactly-once semantics na publicação
+
+### Cache Strategy
+
+```mermaid
+flowchart TD
+    REQ([Requisição GET /consolidado]) --> CACHE{Redis\ncache?}
+    
+    CACHE -->|HIT < 5ms| RES([Retorna 200 OK])
+    CACHE -->|MISS| PG[(PostgreSQL)]
+    
+    PG --> STORE[Salva no Redis\nTTL = 30s]
+    STORE --> RES
+
+    EVENT([Evento recebido]) --> INV[Invalida chave\nno Redis]
+    INV --> NOTE[Próxima req.\nbusca do banco]
+
+    style CACHE fill:#f03e3e,color:#fff
+    style RES fill:#2f9e44,color:#fff
+    style EVENT fill:#1971c2,color:#fff
+```
+
+### Retry e Tolerância a Falhas
+
+```mermaid
+flowchart LR
+    ACT[Ação] --> T1{Tentativa 1}
+    T1 -->|OK| SUCCESS([Sucesso])
+    T1 -->|Falha| W1[Aguarda 500ms]
+    W1 --> T2{Tentativa 2}
+    T2 -->|OK| SUCCESS
+    T2 -->|Falha| W2[Aguarda 1000ms]
+    W2 --> T3{Tentativa 3}
+    T3 -->|OK| SUCCESS
+    T3 -->|Falha| DLQ[(Dead Letter\nQueue)]
+
+    style SUCCESS fill:#2f9e44,color:#fff
+    style DLQ fill:#e03131,color:#fff
+```
+
+**Implementação:**
+```csharp
+// RetryPolicy com backoff exponencial
+await RetryPolicy.ExecuteAsync(
+    action,
+    maxAttempts: 3,
+    delay: TimeSpan.FromMilliseconds(500));
+```
+
+**Circuit Breaker (produção com Polly):**
+- Abre após 5 falhas consecutivas
+- Half-open após 30s para teste de recuperação
+- Fallback: retorna último valor do cache ou 503 com `Retry-After`
+
+---
+
+## ADRs — Decisões Arquiteturais
+
+### ADR-001 — Microsserviços vs Monolito
+
+**Decisão:** Dois microsserviços independentes.
+
+**Contexto:** RNF-01 exige que lançamentos funcionem mesmo se o consolidado cair. Em monolito, uma falha de memória derruba ambos simultaneamente.
+
+| Critério | Monolito | Microsserviços |
+|---|---|---|
+| Isolamento de falhas | Nenhum | Total |
+| Complexidade operacional | Baixa | Alta (mitigada por Docker/K8s) |
+| Escalabilidade independente | Impossível | Nativa |
+| RNF-01 | Violado | Atendido |
+
+**Escolha:** Microsserviços.
+
+---
+
+### ADR-002 — Outbox Pattern para Atomicidade
+
+**Problema (Dual-Write sem Outbox):**
+```mermaid
+sequenceDiagram
+    participant API
+    participant DB
+    participant Broker
+
+    API->>DB: INSERT lancamento ✅
+    API->>Broker: PUBLISH evento ❌ CRASH
+    
+    Note over DB,Broker: Inconsistência silenciosa:\nlançamento salvo, consolidado NUNCA atualizado
+```
+
+**Solução (com Outbox):**
+```mermaid
+sequenceDiagram
+    participant API
+    participant DB
+    participant Worker
+    participant Broker
+
+    API->>DB: BEGIN TRANSACTION
+    API->>DB: INSERT lancamento
+    API->>DB: INSERT outbox_messages
+    API->>DB: COMMIT ✅
+
+    Note over Worker: Polling a cada 2s
+    Worker->>DB: SELECT outbox pendentes
+    Worker->>Broker: PUBLISH (com retry)
+    Worker->>DB: UPDATE status=Enviado
+```
+
+---
+
+### ADR-003 — Cache TTL 30s
+
+**Contexto:** 50 rps = 180.000 queries/hora sem cache — inviável em banco relacional.
+
+| Cenário | Latência | Capacidade |
+|---|---|---|
+| Sem cache (banco direto) | ~50ms | ~200 rps |
+| Cache HIT | < 5ms | > 10.000 rps |
+| Cache MISS | ~55ms | Evento de miss raro (TTL alto) |
+
+**Interface abstrai a implementação:**
+```csharp
+// PoC:      IMemoryCache (sem infra)
+// Produção: IDistributedCache + Redis
+// Interface: IConsolidadoCache (Domain Layer)
+```
+
+---
+
+### ADR-004 — .NET 9 + Minimal API + CQRS
+
+| Componente | Justificativa |
+|---|---|
+| **.NET 9** | ~15% menos alocações HTTP vs .NET 8; melhor startup em containers |
+| **Minimal API** | Menor overhead de reflection vs MVC Controller |
+| **CQRS manual** | Separação clara de Commands (escrita) e Queries (leitura) |
+| **Domain Events** | Entidades publicam eventos; Application coordena, não controla |
+| **Result pattern** | Erros como valores — sem exceptions para controle de fluxo |
 
 ---
 
 ## Estrutura do Projeto
 
 ```
-FluxoCaixa/
-│
-├── FluxoCaixa.sln
+fluxo-de-caixa-banco-carrefour/
 │
 ├── src/
-│   ├── FluxoCaixa.SharedKernel/           # IDomainEvent · Result<T>
+│   ├── Core/                              # Domain Layer — ZERO deps externas
+│   │   ├── Entities/
+│   │   │   ├── Lancamento.cs             # Entidade rica + Domain Events
+│   │   │   └── ConsolidadoDiario.cs      # Projeção do saldo diário
+│   │   ├── Events/
+│   │   │   ├── LancamentoRegistradoEvent.cs
+│   │   │   └── LancamentoCanceladoEvent.cs
+│   │   └── Interfaces/
+│   │       ├── ILancamentoRepository.cs
+│   │       ├── IConsolidadoRepository.cs
+│   │       ├── IConsolidadoCache.cs
+│   │       └── IMessageBus.cs
 │   │
-│   ├── FluxoCaixa.Lancamentos.Domain/     # Entidade rica · Events · Exceptions
-│   ├── FluxoCaixa.Lancamentos.Application/ # CQRS: Commands · Queries · Behaviors
-│   ├── FluxoCaixa.Lancamentos.Infrastructure/ # EF Core · Outbox · MessageBus
-│   └── FluxoCaixa.Lancamentos.API/        # Minimal API · Program.cs
-│
-│   ├── FluxoCaixa.Consolidado.Domain/     # ConsolidadoDiario · Repository interface
-│   ├── FluxoCaixa.Consolidado.Application/ # Queries · IConsolidadoCache
-│   ├── FluxoCaixa.Consolidado.Infrastructure/ # EF Core · Redis · Consumer
-│   └── FluxoCaixa.Consolidado.API/        # Minimal API · Program.cs
+│   ├── Application/                       # Application Layer — Orquestração
+│   │   └── UseCases/
+│   │       ├── Lancamentos/
+│   │       │   └── Commands/
+│   │       │       └── CriarLancamentoCommand.cs
+│   │       │       └── CancelarLancamentoCommand.cs
+│   │       └── ConsolidadoDiario/
+│   │           └── Queries/
+│   │               └── ObterConsolidadoDiarioQuery.cs
+│   │
+│   ├── Infrastructure/                    # Infrastructure Layer — Adaptadores
+│   │   ├── Cache/
+│   │   │   └── InMemoryConsolidadoCache.cs
+│   │   ├── Messaging/
+│   │   │   └── RabbitMqMessageBus.cs
+│   │   ├── Persistence/
+│   │   │   ├── InMemoryLancamentoRepository.cs
+│   │   │   └── InMemoryConsolidadoRepository.cs
+│   │   ├── Resilience/
+│   │   │   └── RetryPolicy.cs
+│   │   └── DependencyInjection/
+│   │       └── InfrastructureServiceCollectionExtensions.cs
+│   │
+│   ├── Presentation/
+│   │   ├── ApiLancamentos/               # API :5001
+│   │   │   ├── Controllers/LancamentosController.cs
+│   │   │   └── Program.cs
+│   │   └── ApiConsolidado/              # API :5002
+│   │       ├── Controllers/ConsolidadoController.cs
+│   │       └── Program.cs
+│   │
+│   └── WorkerServices/
+│       └── ProcessadorEventos/           # Background Worker
+│           └── Worker.cs
 │
 ├── tests/
-│   ├── FluxoCaixa.Lancamentos.UnitTests/  # Domínio (9) + Application (5)
-│   ├── FluxoCaixa.Consolidado.UnitTests/  # Domínio (8) + Application (5)
-│   └── FluxoCaixa.IntegrationTests/       # E2E com WebApplicationFactory (7)
+│   └── FluxoDeCaixa.UnitTests/
+│       ├── Core/Entities/
+│       │   ├── LancamentoTests.cs        # 14 casos — domínio
+│       │   └── ConsolidadoDiarioTests.cs # 8 casos — domínio
+│       └── Application/UseCases/
+│           ├── Lancamentos/Commands/
+│           │   └── CriarLancamentoCommandTests.cs # 9 casos
+│           └── ConsolidadoDiario/
+│               └── ObterConsolidadoDiarioQueryTests.cs # 5 casos
 │
-├── docker/
-│   ├── lancamentos.Dockerfile             # Multi-stage build
-│   └── consolidado.Dockerfile
-│
-├── docker-compose.yml
-│
-└── docs/adr/
-    ├── ADR-001-microsservicos.md
-    ├── ADR-002-outbox-pattern.md
-    └── ADR-003-004-cache-stack.md
+├── docker-compose.yml                    # Stack completa com obs.
+└── docs/
+    └── solution_architecture.md
+```
+
+---
+
+## Observabilidade
+
+### Os Três Pilares
+
+```mermaid
+graph TB
+    subgraph Traces["Distributed Tracing (Jaeger)"]
+        T1[API Gateway\nSpan]
+        T2[lancamentos-api\nSpan]
+        T3[RabbitMQ\nSpan]
+        T4[consolidado-api\nSpan]
+        T1 --> T2 --> T3 --> T4
+    end
+
+    subgraph Metrics["Métricas (Prometheus + Grafana)"]
+        M1[lancamentos_registrados_total]
+        M2[consolidado_cache_hit_rate]
+        M3[outbox_mensagens_pendentes]
+        M4[http_request_duration_p99]
+    end
+
+    subgraph Logs["Logs Estruturados (Serilog)"]
+        L1["{ level, traceId,\nservice, correlationId,\ndurationMs, lancamentoId }"]
+    end
+
+    OTEL[OpenTelemetry\nCollector] --> Traces
+    OTEL --> Metrics
+    OTEL --> Logs
+```
+
+### Alertas Críticos
+
+| Alerta | Condição | Severidade |
+|---|---|---|
+| Latência alta no consolidado | P99 > 500ms por 2min | Warning |
+| Taxa de erros elevada | > 5% de 5xx em 5min | Critical |
+| Outbox acumulando | Pendentes > 500 por 5min | Critical |
+| Redis indisponível | Connection refused | Warning |
+| Serviço indisponível | Health check failing | Critical |
+
+### Health Checks
+
+```csharp
+// Liveness: "o processo está vivo?"
+app.MapHealthChecks("/health/live");
+
+// Readiness: "pronto para receber tráfego?"
+app.MapHealthChecks("/health/ready", new HealthCheckOptions {
+    Predicate = c => c.Tags.Contains("ready")
+});
+```
+
+---
+
+## Segurança
+
+```mermaid
+flowchart LR
+    C([Cliente]) -->|HTTPS TLS 1.3| GW[API Gateway]
+    GW -->|Valida JWT| IDP[(Azure AD)]
+    GW -->|mTLS interno| API[Microsserviço]
+    API -->|Secrets| KV[(Azure\nKey Vault)]
+    API -->|Parameterized\nQueries| PG[(PostgreSQL)]
+
+    style GW fill:#845ef7,color:#fff
+    style KV fill:#e03131,color:#fff
+```
+
+| Camada | Mecanismo |
+|---|---|
+| Autenticação | JWT Bearer + Azure AD |
+| Autorização | Scopes: `lancamentos:write`, `consolidado:read` |
+| Transporte | TLS 1.3 obrigatório, HTTPS redirect |
+| Comunicação interna | mTLS via Service Mesh (Linkerd) |
+| Secrets | Azure Key Vault — nunca em appsettings |
+| Injeção SQL | EF Core parameterized queries |
+| Rate Limiting | 100 req/min por IP (nativo .NET 9) |
+
+---
+
+## Arquitetura de Transição
+
+### Strangler Fig Pattern — 3 Fases
+
+```mermaid
+timeline
+    title Migração do Sistema Legado (5 meses)
+    
+    Meses 1-2 : Fase 1 Coexistência
+              : API Gateway roteia /lancamentos para novo sistema
+              : Relatórios ainda no legado
+              : ETL migra histórico em batches noturnos
+
+    Meses 3-4 : Fase 2 Shadow Mode
+              : Dual-write nos dois sistemas
+              : Job compara totais diariamente
+              : Log de divergências para auditoria
+
+    Mês 5+ : Fase 3 Descomissionamento
+           : 100% tráfego no novo sistema
+           : Legado em read-only por 90 dias
+           : Desligamento após validação fiscal
+```
+
+---
+
+## Testes e Qualidade
+
+### Pirâmide de Testes
+
+```mermaid
+graph TB
+    subgraph PT["Pirâmide de Testes"]
+        E2E["Testes E2E / Contrato\n(Pact.NET)\nVerificação de interfaces entre serviços"]
+        INT["Testes de Integração\nWebApplicationFactory + SQLite In-Memory\nHTTP 201, 400, 404, 204"]
+        APP["Testes de Application\nHandlers + Queries com Mocks\nCenários feliz + erros + edge cases"]
+        DOM["Testes de Domínio\nEntidades puras sem mocks\nInvariantes + Domain Events + Cancelamento"]
+    end
+
+    DOM --> APP --> INT --> E2E
+    
+    style DOM fill:#2f9e44,color:#fff
+    style APP fill:#1971c2,color:#fff
+    style INT fill:#e67700,color:#fff
+    style E2E fill:#c92a2a,color:#fff
+```
+
+### Cobertura por Suite
+
+| Suite | Casos | Foco |
+|---|---|---|
+| `LancamentoTests` | 14 | Criação, cancelamento, domain events, validações, edge cases |
+| `ConsolidadoDiarioTests` | 8 | Cálculo de saldo, estorno, múltiplos lançamentos |
+| `CriarLancamentoCommandTests` | 6 | Handler, persistência, publicação de evento, falha de banco |
+| `CancelarLancamentoCommandTests` | 3 | Cancelamento, inexistente, evento publicado |
+| `ObterConsolidadoDiarioQueryTests` | 5 | Cache HIT/MISS, zeros, saldo correto |
+
+```bash
+# Rodar todos com cobertura
+dotnet test --collect:"XPlat Code Coverage"
+reportgenerator -reports:"**/coverage.cobertura.xml" -targetdir:"coverage-report"
+```
+
+---
+
+## Kubernetes e Infraestrutura
+
+### Deployment Diagram
+
+```mermaid
+graph TB
+    subgraph AKS["Azure Kubernetes Service (AKS)"]
+        subgraph NS["namespace: fluxo-caixa"]
+            ING[Ingress Controller\nNGINX]
+
+            subgraph LA_DEP["Deployment: lancamentos-api"]
+                LA1[Pod] & LA2[Pod]
+            end
+
+            subgraph CA_DEP["Deployment: consolidado-api"]
+                CA1[Pod] & CA2[Pod] & CA3[Pod]
+            end
+
+            subgraph WK_DEP["Deployment: worker"]
+                WK1[Pod]
+            end
+
+            SVC_LA[Service\nClusterIP :5001]
+            SVC_CA[Service\nClusterIP :5002]
+
+            HPA_LA[HPA\n2-5 réplicas\nCPU > 70%]
+            HPA_CA[HPA\n3-10 réplicas\nCPU > 60%]
+        end
+
+        subgraph INFRA["Serviços Gerenciados (Azure)"]
+            PG1[(Azure DB\nPostgreSQL)]
+            PG2[(Azure DB\nPostgreSQL)]
+            RD[(Azure Cache\nRedis)]
+            SB[(Azure\nService Bus)]
+        end
+    end
+
+    ING --> SVC_LA --> LA_DEP
+    ING --> SVC_CA --> CA_DEP
+    LA_DEP --> PG1
+    LA_DEP --> SB
+    WK_DEP --> SB
+    WK_DEP --> PG2
+    WK_DEP --> RD
+    CA_DEP --> RD
+    CA_DEP --> PG2
+    HPA_LA -.->|escala| LA_DEP
+    HPA_CA -.->|escala| CA_DEP
+```
+
+---
+
+## Estimativa de Custos Azure
+
+### Produção (Brazil South)
+
+| Serviço | Configuração | USD/mês |
+|---|---|---|
+| AKS Node Pool | 3 nós Standard_D2s_v3 | ~$180 |
+| Azure DB PostgreSQL Flexible | Burstable B2s · 2 vCores · 4GB | ~$50 |
+| Azure Cache for Redis | C1 Standard · 1GB | ~$55 |
+| Azure Service Bus | Standard · < 10M mensagens/mês | ~$10 |
+| Azure Container Registry | Basic · 10GB | ~$5 |
+| Azure Monitor + Log Analytics | 5GB/dia | ~$25 |
+| **Total estimado** | | **~$325/mês** |
+
+> **MVP / Dev:** Docker Compose local → **$0**
+> **Scale-out:** Adicionar nós e zone redundancy → **~$600/mês**
+
+---
+
+## Evoluções Futuras
+
+```mermaid
+timeline
+    title Roadmap Arquitetural
+
+    Curto Prazo : Event Sourcing com EventStoreDB
+               : Pact.NET contract testing entre serviços
+               : GitHub Actions CI/CD com gate de cobertura 80%
+
+    Médio Prazo : CQRS com read replica PostgreSQL dedicada
+               : Saga Pattern para transações distribuídas
+               : Multi-tenancy — múltiplas contas por comerciante
+
+    Longo Prazo : ML para previsão de fluxo de caixa
+               : Conciliação bancária via importação OFX
+               : Chaos Engineering com Simmy
+               : Terraform IaC para toda infra Azure
 ```
 
 ---
 
 ## Como Rodar Localmente
 
-### Pré-requisitos
-
-| Ferramenta | Versão | Download |
-|---|---|---|
-| .NET SDK | **9.0** | https://dot.net/download |
-| Docker Desktop | 4.x (opcional) | https://docker.com |
-| Git | qualquer | https://git-scm.com |
-
-### Opção A — Direto com .NET (mais rápido para avaliação)
+### Opção A — Docker Compose (stack completa)
 
 ```bash
-# 1. Clone
-git clone https://github.com/seu-usuario/fluxocaixa.git
-cd fluxocaixa
+git clone <url-do-repositorio>
+cd fluxo-de-caixa-banco-carrefour
 
-# 2. Terminal 1 — Lançamentos API
-cd src/FluxoCaixa.Lancamentos.API
-dotnet run
-# ✅ http://localhost:5001/swagger
+docker compose up --build
 
-# 3. Terminal 2 — Consolidado API
-cd src/FluxoCaixa.Consolidado.API
-dotnet run
-# ✅ http://localhost:5002/swagger
+# APIs disponíveis:
+# http://localhost:5001/swagger  — Lançamentos
+# http://localhost:5002/swagger  — Consolidado
+# http://localhost:15672         — RabbitMQ Management
+# http://localhost:3000          — Grafana (admin/admin123)
+# http://localhost:16686         — Jaeger Traces
 ```
 
-> Os bancos SQLite (`lancamentos.db`, `consolidado.db`) são criados e migrados automaticamente.
-
-### Opção B — Docker Compose
+### Opção B — Apenas .NET (sem Docker)
 
 ```bash
-docker compose up --build
-# Lançamentos: http://localhost:5001/swagger
-# Consolidado: http://localhost:5002/swagger
+# Terminal 1 — API Lançamentos
+cd src/Presentation/ApiLancamentos
+dotnet run
+
+# Terminal 2 — API Consolidado
+cd src/Presentation/ApiConsolidado
+dotnet run
+
+# Terminal 3 — Worker
+cd src/WorkerServices/ProcessadorEventos
+dotnet run
 ```
 
 ### Teste Rápido (fluxo completo)
@@ -464,330 +969,50 @@ docker compose up --build
 # 1. Registrar crédito
 curl -X POST http://localhost:5001/api/lancamentos \
   -H "Content-Type: application/json" \
-  -d '{"valor": 1500.00, "tipo": 2, "descricao": "Venda do dia", "data": "2025-01-15"}'
-# → 201 Created {"id": "..."}
+  -d '{"tipo": 2, "conta": "12345", "valor": 1500.00, "descricao": "Venda do dia"}'
+# → 201 Created {"id": "...", "dataLancamento": "2025-01-15"}
 
 # 2. Registrar débito
 curl -X POST http://localhost:5001/api/lancamentos \
   -H "Content-Type: application/json" \
-  -d '{"valor": 300.00, "tipo": 1, "descricao": "Aluguel", "data": "2025-01-15"}'
+  -d '{"tipo": 1, "conta": "12345", "valor": 300.00, "descricao": "Aluguel"}'
 
-# 3. Aguardar ~2s para o Outbox processar
+# 3. Aguardar processamento assíncrono (~2s)
 sleep 2
 
 # 4. Consultar consolidado
-curl http://localhost:5002/api/consolidado/2025-01-15
+curl http://localhost:5002/api/consolidado/2025-01-15?conta=12345
 # → {"totalCreditos": 1500.00, "totalDebitos": 300.00, "saldoLiquido": 1200.00}
 
-# 5. Listar lançamentos do dia
-curl http://localhost:5001/api/lancamentos/2025-01-15
+# 5. Cancelar lançamento
+curl -X DELETE http://localhost:5001/api/lancamentos/{id}
+# → 204 No Content
 
-# 6. Período
-curl "http://localhost:5002/api/consolidado/periodo?inicio=2025-01-01&fim=2025-01-31"
+# 6. Rodar testes
+dotnet test
 ```
 
 ---
 
 ## Endpoints da API
 
-### Serviço de Lançamentos — porta 5001
+### lancamentos-api — :5001
 
 | Método | Endpoint | Descrição | Response |
 |---|---|---|---|
-| `POST` | `/api/lancamentos` | Registra novo lançamento | `201 Created {id}` |
-| `GET` | `/api/lancamentos/{data}` | Lista lançamentos de uma data (`yyyy-MM-dd`) | `200 OK [{...}]` |
-| `DELETE` | `/api/lancamentos/{id}` | Cancela um lançamento | `204 No Content` |
+| `POST` | `/api/lancamentos` | Registra novo lançamento | `201 Created {id, dataLancamento}` |
+| `GET` | `/api/lancamentos/{data}` | Lista lançamentos de uma data | `200 OK [{...}]` |
+| `DELETE` | `/api/lancamentos/{id}` | Cancela lançamento (soft-delete) | `204 No Content` |
 | `GET` | `/health` | Health check | `200 Healthy` |
 
-**Body do POST:**
-```json
-{
-  "valor": 750.50,
-  "tipo": 2,
-  "descricao": "Recebimento NF 1234",
-  "data": "2025-01-15"
-}
-```
-`tipo`: `1` = Débito · `2` = Crédito
+### consolidado-api — :5002
 
-**Validações:**
-
-| Campo | Regra |
-|---|---|
-| `valor` | > 0 e ≤ 10.000.000 |
-| `tipo` | 1 ou 2 |
-| `descricao` | Obrigatória, máx. 255 caracteres |
-| `data` | Não pode ser data futura |
-
-### Serviço de Consolidado — porta 5002
-
-| Método | Endpoint | Descrição |
-|---|---|---|
-| `GET` | `/api/consolidado/{data}` | Saldo consolidado de um dia (`yyyy-MM-dd`) |
-| `GET` | `/api/consolidado/periodo?inicio={data}&fim={data}` | Consolidado por período (máx. 365 dias) |
-| `GET` | `/health` | Health check |
-
-**Response consolidado:**
-```json
-{
-  "data": "2025-01-15",
-  "totalCreditos": 1500.00,
-  "totalDebitos": 300.00,
-  "saldoLiquido": 1200.00,
-  "atualizadoEm": "2025-01-15T10:32:15.123Z"
-}
-```
-
----
-
-## Testes
-
-```bash
-# Todos os testes
-dotnet test
-
-# Por suite
-dotnet test tests/FluxoCaixa.Lancamentos.UnitTests/
-dotnet test tests/FluxoCaixa.Consolidado.UnitTests/
-dotnet test tests/FluxoCaixa.IntegrationTests/
-
-# Com cobertura
-dotnet test --collect:"XPlat Code Coverage"
-```
-
-### Suítes e Estratégia
-
-```
-Pirâmide de Testes:
-
-        ┌──────────────────────────────┐
-        │  Integration Tests  (7)      │  WebApplicationFactory + SQLite In-Memory
-        │  Testa o sistema real E2E    │  HTTP: 201, 400, 404, 204, health
-        └──────────────────────────────┘
-        ┌──────────────────────────────┐
-        │  Application Tests  (10)     │  Handlers com mocks (NSubstitute)
-        │  Commands + Queries          │  Validators + Pipeline behaviors
-        └──────────────────────────────┘
-        ┌──────────────────────────────┐
-        │  Domain Tests  (17)          │  Puras, sem mocks
-        │  Regras de negócio           │  Criação, cancelamento, cálculo de saldo
-        └──────────────────────────────┘
-```
-
-| Suite | Casos | O que cobre |
-|---|---|---|
-| `Lancamentos.UnitTests.Domain` | 9 | Criação com dados válidos/inválidos, eventos publicados, cancelamento |
-| `Lancamentos.UnitTests.Application` | 5 | Handler persistência, Validator todas as regras |
-| `Consolidado.UnitTests.Domain` | 8 | Cálculo de saldo, estorno, valores negativos |
-| `Consolidado.UnitTests.Application` | 5 | Cache HIT/MISS/zero, período inválido, >365 dias |
-| `IntegrationTests` | 7 | POST 201/400, GET listagem, DELETE 204/404, health |
-
----
-
-## Segurança
-
-### Autenticação e Autorização
-
-- **JWT Bearer Token** em todos os endpoints (`/health` e `/metrics` excluídos)
-- **Scopes**: `lancamentos:write`, `lancamentos:read`, `consolidado:read`
-- **TTL**: Access Token 15 min + Refresh Token 7 dias com rotation
-
-### Comunicação entre Serviços
-
-- **mTLS** entre serviços via Service Mesh (Linkerd/Istio em Kubernetes)
-- **Credenciais do broker** via Azure Key Vault — nunca em `appsettings.json`
-- **Connection strings** injetadas por variáveis de ambiente em runtime
-
-### Rate Limiting (.NET 9 nativo)
-
-```csharp
-builder.Services.AddRateLimiter(opts =>
-    opts.AddFixedWindowLimiter("lancamentos", l => {
-        l.PermitLimit = 100;
-        l.Window = TimeSpan.FromMinutes(1);
-        l.QueueLimit = 10;
-    }));
-```
-
-### OWASP Top 10 — Mitigações
-
-| Risco | Mitigação |
-|---|---|
-| A01 Broken Access Control | JWT + Scopes + Policies por endpoint |
-| A02 Cryptographic Failures | HTTPS obrigatório, TLS 1.3, dados em repouso criptografados |
-| A03 Injection | EF Core parameterized queries por padrão; zero SQL concatenado |
-| A04 Insecure Design | DDD com domínio isolado; sem lógica de negócio na API layer |
-| A07 Auth Failures | JWT com expiração curta + Refresh Token rotation |
-| A09 Logging Failures | Serilog estruturado; sem log de dados sensíveis (PII mascarado) |
-
----
-
-## Monitoramento & Observabilidade
-
-### Os Três Pilares
-
-**1. Logs Estruturados (Serilog + OpenTelemetry)**
-```json
-{
-  "Timestamp": "2025-01-15T10:30:00Z",
-  "Level": "Information",
-  "Message": "Lançamento registrado",
-  "Service": "lancamentos-api",
-  "CorrelationId": "abc-123",
-  "TraceId": "def-456",
-  "LancamentoId": "guid-aqui",
-  "Tipo": "Credito",
-  "Valor": 1500.00,
-  "DurationMs": 45
-}
-```
-
-**2. Métricas (Prometheus + Grafana)**
-```csharp
-// Métricas customizadas de negócio
-var lancamentosRegistrados = meter.CreateCounter<long>("lancamentos_registrados_total");
-var outboxPendentes = meter.CreateObservableGauge<int>("outbox_mensagens_pendentes",
-    () => outboxRepo.ContarPendentesAsync().Result);
-var cacheHitRate = meter.CreateObservableGauge<double>("consolidado_cache_hit_rate");
-```
-
-**3. Distributed Tracing (Jaeger)**
-Trace completo: `API Gateway → lancamentos-api → PostgreSQL → Outbox → Broker → consolidado-api → Redis`
-
-### Health Checks
-
-```csharp
-app.MapHealthChecks("/health/live");          // Liveness: app está de pé?
-app.MapHealthChecks("/health/ready",          // Readiness: banco + broker OK?
-    new HealthCheckOptions { Predicate = c => c.Tags.Contains("ready") });
-```
-
-### Alertas Críticos
-
-| Alerta | Condição | Severidade |
-|---|---|---|
-| Alta latência no consolidado | P99 > 500ms por 2min | ⚠️ Warning |
-| Taxa de erros elevada | > 5% de 5xx em 5min | 🔴 Critical |
-| Outbox travada | Pendentes > 500 por 5min | 🔴 Critical |
-| Serviço indisponível | Health check failing | 🔴 Critical |
-| Redis down | Connection refused | ⚠️ Warning |
-
----
-
-## Arquitetura de Transição
-
-### Cenário: Migração de Sistema Legado
-
-Usando o **Strangler Fig Pattern** para migração sem downtime:
-
-```
-FASE 1 — Coexistência (Meses 1–3)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-API Gateway roteia:
-  /api/lancamentos  ──→  Novo sistema (lancamentos-api)
-  /relatorios/*     ──→  Sistema legado (somente leitura)
-
-ETL incremental: migra histórico de lançamentos em batches noturnos.
-Zero downtime para o comerciante.
-
-FASE 2 — Shadow Mode (Meses 3–4)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Dual-write: escreve nos dois sistemas.
-Job diário compara totais entre legado e novo sistema.
-Log de divergências para auditoria e correção.
-
-FASE 3 — Descomissionamento (Mês 5+)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-100% do tráfego no novo sistema.
-Legado em modo read-only por 90 dias (auditoria fiscal).
-Desligamento após validação.
-```
-
-### ETL de Migração
-
-```csharp
-// Job executado como BackgroundService durante a transição
-// Lê lançamentos legados não migrados → transforma para modelo canônico
-// → POST na nova API (respeitando domínio) → marca como migrado
-// → Log de auditoria com hash de comparação de totais
-```
-
----
-
-## Estimativa de Custos Azure
-
-### Ambiente de Produção (Brazil South)
-
-| Serviço | Configuração | USD/mês |
-|---|---|---|
-| Container Apps — Lançamentos | 2 réplicas · 0.5 vCPU · 1GB | ~$40 |
-| Container Apps — Consolidado | 3 réplicas · 0.5 vCPU · 1GB | ~$60 |
-| Azure Database for PostgreSQL Flexible | Burstable B2s · 2 vCores · 4GB | ~$50 |
-| Azure Cache for Redis | C1 Standard · 1GB | ~$55 |
-| Azure Service Bus | Standard · < 10M mensagens/mês | ~$10 |
-| Azure Container Registry | Basic · 10GB | ~$5 |
-| Azure Monitor + Log Analytics | 5GB/dia | ~$25 |
-| **Total estimado** | | **~$245/mês** |
-
-> **MVP / Startup:** Container Apps com scale-to-zero → ~**$80/mês** em off-peak.  
-> **Alta disponibilidade:** Adicionar réplicas e zone redundancy → ~**$420/mês**.
-
----
-
-## PoC vs Produção
-
-A PoC funciona com zero dependências externas. Cada componente tem troca por configuração:
-
-| Componente | PoC (este repo) | Produção | Troca |
+| Método | Endpoint | Descrição | Response |
 |---|---|---|---|
-| Banco de Dados | SQLite | PostgreSQL 16 | 1 linha: `UseNpgsql()` |
-| Mensageria | InMemoryMessageBus | Azure Service Bus | DI config: `IMessageBus` |
-| Cache | IMemoryCache | Redis 7 | DI config: `IConsolidadoCache` |
-| Autenticação | Sem auth | JWT + Azure AD | Middleware no `Program.cs` |
-| Containers | Docker Compose | AKS (Kubernetes) | Helm charts |
-| Secrets | appsettings.json | Azure Key Vault | `AddAzureKeyVault()` |
-| CI/CD | — | GitHub Actions | `.github/workflows/` |
-| Observabilidade | Console logs | OTel + Jaeger + Grafana | `AddOpenTelemetry()` |
+| `GET` | `/api/consolidado/{data}` | Saldo consolidado de um dia | `200 OK {totalCreditos, totalDebitos, saldoLiquido}` |
+| `GET` | `/api/consolidado/hoje` | Saldo do dia atual | `200 OK {...}` |
+| `GET` | `/health` | Health check | `200 Healthy` |
 
 ---
 
-## Evoluções Futuras
-
-**Arquiteturais**
-- Event Sourcing completo com EventStoreDB para histórico imutável
-- CQRS com read replica PostgreSQL dedicada ao consolidado
-- Pact.NET — Contract Testing entre os dois serviços
-- Chaos Engineering com Simmy para validar resiliência
-
-**Funcionais**
-- Múltiplas contas caixa por comerciante (multi-tenancy)
-- Categorização de lançamentos (tags para relatórios analíticos)
-- Exportação do consolidado em PDF/Excel
-- Notificações (e-mail/webhook) quando saldo fica negativo
-- Conciliação bancária via importação de OFX
-
-**Operacionais**
-- GitHub Actions: build → test → coverage gate (80%) → SAST → deploy
-- Terraform IaC para provisionar toda a infraestrutura Azure
-- Blue/Green deployment para zero-downtime releases
-
----
-
-## Tecnologias
-
-| Tecnologia | Versão | Uso |
-|---|---|---|
-| .NET / C# | 9.0 | Runtime e linguagem |
-| ASP.NET Core | 9.0 | Minimal API · DI · Health Checks |
-| MediatR | 12.x | CQRS · Pipeline Behaviors |
-| FluentValidation | 11.x | Validação declarativa de commands |
-| Entity Framework Core | 9.x | ORM · Migrations |
-| SQLite / PostgreSQL | 3.x / 16 | Banco PoC / Produção |
-| xUnit + FluentAssertions | 2.9.x / 6.x | Test runner + assertions legíveis |
-| NSubstitute | 5.x | Mocking de contratos de infra |
-| Docker + Compose | 24.x | Containerização local |
-| OpenTelemetry | — | Distributed tracing + métricas |
-
----
-
-*Banco Carrefour — Desafio Arquiteto de Soluções — Janeiro 2025*
+*Banco Carrefour — Desafio Arquiteto de Soluções — 2026*

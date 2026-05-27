@@ -1,13 +1,16 @@
+using System.Text.Json.Serialization;
 using FluxoDeCaixa.Application.UseCases.ConsolidadoDiario.Queries;
+using FluxoDeCaixa.Infrastructure.DependencyInjection;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-builder.Services.AddControllers();
+builder.Services.AddInfrastructureServices();
+builder.Services.AddControllers()
+    .AddJsonOptions(opts =>
+        opts.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Dependency Injection
 builder.Services.AddScoped<ObterConsolidadoDiarioQuery>();
 
 var app = builder.Build();
@@ -19,8 +22,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
 app.UseAuthorization();
 app.MapControllers();
+app.MapGet("/health", () => Results.Ok("Healthy"));
 
 app.Run();

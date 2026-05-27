@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
@@ -14,6 +14,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Application\FluxoDeCaixa.Application.csproj" />
     <ProjectReference Include="..\..\Infrastructure\FluxoDeCaixa.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\WorkerServices\ProcessadorEventos\FluxoDeCaixa.ProcessadorEventos.csproj" />
+    <ProjectReference Include="..\ApiConsolidado\FluxoDeCaixa.ApiConsolidado.csproj" />
   </ItemGroup>
 
 </Project>

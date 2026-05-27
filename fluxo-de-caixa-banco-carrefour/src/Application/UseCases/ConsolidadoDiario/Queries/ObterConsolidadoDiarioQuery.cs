@@ -1,27 +1,53 @@
 using System;
-using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
+using FluxoDeCaixa.Core.Interfaces;
 
 namespace FluxoDeCaixa.Application.UseCases.ConsolidadoDiario.Queries
 {
-    public record ConsolidadoDiarioResponse(DateTime Data, string Conta, decimal Debito, decimal Credito, decimal Total);
+    public record ConsolidadoDiarioResponse(
+        DateTime Data,
+        string Conta,
+        decimal TotalDebitos,
+        decimal TotalCreditos,
+        decimal SaldoLiquido,
+        DateTime AtualizadoEm);
 
     public class ObterConsolidadoDiarioQuery
     {
-        // Aqui injetaríamos um repositório de leitura (Read Model)
-        // private readonly IConsolidadoRepository _repository;
+        private readonly IConsolidadoCache _cache;
+        private readonly IConsolidadoRepository _repository;
 
-        public ObterConsolidadoDiarioQuery()
+        public ObterConsolidadoDiarioQuery(IConsolidadoCache cache, IConsolidadoRepository repository)
         {
+            _cache = cache;
+            _repository = repository;
         }
 
-        public async Task<IEnumerable<ConsolidadoDiarioResponse>> ExecutarAsync()
+        public async Task<ConsolidadoDiarioResponse> ExecutarAsync(DateTime data, string conta, CancellationToken cancellationToken = default)
         {
-            // Simulação de retorno para fins de demonstração
-            return await Task.FromResult(new List<ConsolidadoDiarioResponse>
+            var consolidado = await _cache.ObterAsync(data, conta);
+            if (consolidado is null)
             {
-                new ConsolidadoDiarioResponse(DateTime.UtcNow.Date, "1", 1000, 2500, 1500)
-            });
+                consolidado = await _repository.ObterPorDataAsync(data, conta);
+                if (consolidado is not null)
+                {
+                    await _cache.SalvarAsync(consolidado);
+                }
+            }
+
+            if (consolidado is null)
+            {
+                return new ConsolidadoDiarioResponse(data.Date, conta, 0, 0, 0, DateTime.UtcNow);
+            }
+
+            return new ConsolidadoDiarioResponse(
+                consolidado.Data,
+                consolidado.Conta,
+                consolidado.TotalDebitos,
+                consolidado.TotalCreditos,
+                consolidado.Saldo,
+                DateTime.UtcNow);
         }
     }
 }

@@ -1,0 +1,39 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v9.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v9.0": {
+      "FluxoDeCaixa.Application/1.0.0": {
+        "dependencies": {
+          "FluxoDeCaixa.Core": "1.0.0"
+        },
+        "runtime": {
+          "FluxoDeCaixa.Application.dll": {}
+        }
+      },
+      "FluxoDeCaixa.Core/1.0.0": {
+        "runtime": {
+          "FluxoDeCaixa.Core.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "FluxoDeCaixa.Application/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "FluxoDeCaixa.Core/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}
